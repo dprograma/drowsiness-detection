@@ -1,3 +1,4 @@
+import uuid
 import cv2
 import numpy as np
 import pandas as pd
@@ -7,6 +8,16 @@ import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
 import os
 from pathlib import Path
+import sqlite3
+
+
+# SQLite database setup
+conn = sqlite3.connect('session_data.db')
+c = conn.cursor()
+
+# Create table to store session data
+c.execute('''CREATE TABLE IF NOT EXISTS session_images
+             (user_id TEXT, image_path TEXT, timestamp TEXT)''')
 
 # Constants
 FRAME_DURATION = timedelta(
@@ -114,7 +125,6 @@ def process_frame(frame, eye_cascade, face_cascade, eye_model, face_model):
         eye_closed_timestamps,
     )
 
-
 def test_from_dataset(dataset_dir):
     # Capture the start time of processing
     start_time = datetime.now()
@@ -162,6 +172,12 @@ def test_from_dataset(dataset_dir):
 
 
 def test_from_webcam():
+     # Unique user ID for the session
+    user_id = str(uuid.uuid4())
+    session_folder = os.path.join(base_dir, f"session_images/session_{user_id}")
+    if not os.path.exists(session_folder):
+        os.makedirs(session_folder)
+        
     cap = cv2.VideoCapture(0)  # Open the default camera
     eye_closed_start_time = None
     drowsiness_start_time = None
@@ -218,12 +234,26 @@ def test_from_webcam():
 
         # Display the resulting frame with the detection
         cv2.imshow("Drowsiness Detection", frame)
+        
+        # Save frame to session folder with timestamp
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        frame_path = os.path.join(session_folder, f"{user_id}_{timestamp}.png")
+        cv2.imwrite(frame_path, frame)
+        
+        # Save to database
+        save_frame_to_db(user_id, frame_path, timestamp)
 
         if cv2.waitKey(1) & 0xFF == ord("q"):  # Press Q to quit
             break
 
     cap.release()
     cv2.destroyAllWindows()
+    
+
+def save_frame_to_db(user_id, image_path, timestamp):
+    with conn:
+        c.execute("INSERT INTO session_images (user_id, image_path, timestamp) VALUES (?, ?, ?)",
+                  (user_id, image_path, timestamp))
 
 
 def plot_precision_recall_curve(y_true, y_scores, title):
